@@ -1,3 +1,5 @@
+const express = require("express");
+
 const {
     Client,
     GatewayIntentBits,
@@ -6,16 +8,23 @@ const {
     SlashCommandBuilder
 } = require("discord.js");
 
+const app = express();
+
+const PORT = process.env.PORT || 10000;
+
+app.get("/", (req, res) => {
+    res.send("Discord Bot is running!");
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`HTTP server listening on port ${PORT}`);
+});
+
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-if (!TOKEN) {
-    console.error("DISCORD_TOKEN が設定されていません");
-    process.exit(1);
-}
-
-if (!CLIENT_ID) {
-    console.error("CLIENT_ID が設定されていません");
+if (!TOKEN || !CLIENT_ID) {
+    console.error("DISCORD_TOKEN または CLIENT_ID がありません");
     process.exit(1);
 }
 
@@ -36,7 +45,7 @@ const commands = [
         .addStringOption(option =>
             option
                 .setName("dice")
-                .setDescription("例: 1d100、2d6、3d20")
+                .setDescription("例: 1d100")
                 .setRequired(true)
         )
 ].map(command => command.toJSON());
@@ -44,41 +53,42 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 async function registerCommands() {
-    try {
-        console.log("スラッシュコマンドを登録中...");
+    await rest.put(
+        Routes.applicationCommands(CLIENT_ID),
+        {
+            body: commands
+        }
+    );
 
-        await rest.put(
-            Routes.applicationCommands(CLIENT_ID),
-            {
-                body: commands
-            }
-        );
-
-        console.log("スラッシュコマンドの登録完了");
-    } catch (error) {
-        console.error(error);
-    }
+    console.log("スラッシュコマンド登録完了");
 }
 
 client.once("ready", () => {
-    console.log(`ログインしました: ${client.user.tag}`);
+    console.log(`Discordに接続: ${client.user.tag}`);
 });
 
 client.on("interactionCreate", async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === "ping") {
-        const latency = Date.now() - interaction.createdTimestamp;
+        const latency =
+            Date.now() - interaction.createdTimestamp;
 
         await interaction.reply(
-            `Pong!\n応答速度: ${latency}ms\nWebSocket: ${client.ws.ping}ms`
+            `Pong!\n` +
+            `応答速度: ${latency}ms\n` +
+            `WebSocket: ${client.ws.ping}ms`
         );
+
+        return;
     }
 
     if (interaction.commandName === "dice") {
-        const input = interaction.options.getString("dice");
+        const input =
+            interaction.options.getString("dice");
 
-        const match = input.match(/^(\d+)?d(\d+)$/i);
+        const match =
+            input.match(/^(\d+)?d(\d+)$/i);
 
         if (!match) {
             await interaction.reply(
@@ -92,7 +102,7 @@ client.on("interactionCreate", async interaction => {
 
         if (count < 1 || count > 100) {
             await interaction.reply(
-                "ダイスの個数は1～100個までです。"
+                "ダイスの個数は1～100までです。"
             );
             return;
         }
@@ -113,7 +123,7 @@ client.on("interactionCreate", async interaction => {
         }
 
         const total = results.reduce(
-            (sum, value) => sum + value,
+            (a, b) => a + b,
             0
         );
 
@@ -130,4 +140,4 @@ async function main() {
     await client.login(TOKEN);
 }
 
-main();
+main().catch(console.error);
