@@ -1,5 +1,4 @@
 const express = require("express");
-
 const {
     Client,
     GatewayIntentBits,
@@ -9,22 +8,35 @@ const {
 } = require("discord.js");
 
 const app = express();
-
 const PORT = process.env.PORT || 10000;
 
+// Render用HTTPサーバー
 app.get("/", (req, res) => {
-    res.send("Discord Bot is running!");
+    res.status(200).send("Discord Bot is running!");
+});
+
+app.get("/health", (req, res) => {
+    res.status(200).json({
+        status: "ok",
+        discord: client?.isReady() ? "connected" : "connecting"
+    });
 });
 
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`HTTP server listening on port ${PORT}`);
 });
 
+// Discord Bot
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-if (!TOKEN || !CLIENT_ID) {
-    console.error("DISCORD_TOKEN または CLIENT_ID がありません");
+if (!TOKEN) {
+    console.error("DISCORD_TOKEN is not set");
+    process.exit(1);
+}
+
+if (!CLIENT_ID) {
+    console.error("CLIENT_ID is not set");
     process.exit(1);
 }
 
@@ -34,6 +46,7 @@ const client = new Client({
     ]
 });
 
+// コマンド
 const commands = [
     new SlashCommandBuilder()
         .setName("ping")
@@ -45,14 +58,17 @@ const commands = [
         .addStringOption(option =>
             option
                 .setName("dice")
-                .setDescription("例: 1d100")
+                .setDescription("例: 1d100、2d6、3d20")
                 .setRequired(true)
         )
 ].map(command => command.toJSON());
 
-const rest = new REST({ version: "10" }).setToken(TOKEN);
-
+// コマンド登録
 async function registerCommands() {
+    const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+    console.log("Registering slash commands...");
+
     await rest.put(
         Routes.applicationCommands(CLIENT_ID),
         {
@@ -60,16 +76,21 @@ async function registerCommands() {
         }
     );
 
-    console.log("スラッシュコマンド登録完了");
+    console.log("Slash commands registered.");
 }
 
+// Bot起動
 client.once("ready", () => {
-    console.log(`Discordに接続: ${client.user.tag}`);
+    console.log(`Logged in as ${client.user.tag}`);
 });
 
+// コマンド処理
 client.on("interactionCreate", async interaction => {
-    if (!interaction.isChatInputCommand()) return;
+    if (!interaction.isChatInputCommand()) {
+        return;
+    }
 
+    // /ping
     if (interaction.commandName === "ping") {
         const latency =
             Date.now() - interaction.createdTimestamp;
@@ -83,6 +104,7 @@ client.on("interactionCreate", async interaction => {
         return;
     }
 
+    // /dice
     if (interaction.commandName === "dice") {
         const input =
             interaction.options.getString("dice");
@@ -92,8 +114,10 @@ client.on("interactionCreate", async interaction => {
 
         if (!match) {
             await interaction.reply(
-                "形式が正しくありません。\n例: `/dice 1d100`"
+                "形式が正しくありません。\n" +
+                "例: `/dice 1d100`"
             );
+
             return;
         }
 
@@ -104,6 +128,7 @@ client.on("interactionCreate", async interaction => {
             await interaction.reply(
                 "ダイスの個数は1～100までです。"
             );
+
             return;
         }
 
@@ -111,6 +136,7 @@ client.on("interactionCreate", async interaction => {
             await interaction.reply(
                 "ダイスの面数は2～1,000,000までです。"
             );
+
             return;
         }
 
@@ -123,7 +149,7 @@ client.on("interactionCreate", async interaction => {
         }
 
         const total = results.reduce(
-            (a, b) => a + b,
+            (sum, value) => sum + value,
             0
         );
 
@@ -135,9 +161,28 @@ client.on("interactionCreate", async interaction => {
     }
 });
 
-async function main() {
-    await registerCommands();
-    await client.login(TOKEN);
+// 起動
+async function start() {
+    try {
+        await registerCommands();
+        await client.login(TOKEN);
+
+        console.log("Discord Bot started successfully.");
+    } catch (error) {
+        console.error("Failed to start Discord Bot:");
+        console.error(error);
+    }
 }
 
-main().catch(console.error);
+start();
+
+// プロセスが終了しないことを確認
+process.on("SIGTERM", () => {
+    console.log("SIGTERM received.");
+    client.destroy();
+});
+
+process.on("SIGINT", () => {
+    console.log("SIGINT received.");
+    client.destroy();
+});
